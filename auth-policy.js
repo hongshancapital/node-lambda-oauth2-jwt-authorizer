@@ -289,7 +289,7 @@ AuthPolicy.prototype = (function() {
      * @method build
      * @return {Object} The policy object that can be serialized to JSON.
      */
-    build: function() {
+    build: function(context = {}) {
       if ((!this.allowMethods || this.allowMethods.length === 0) &&
         (!this.denyMethods || this.denyMethods.length === 0)) {
         throw new Error("No statements defined for the policy");
@@ -305,6 +305,10 @@ AuthPolicy.prototype = (function() {
       doc.Statement = doc.Statement.concat(getStatementsForEffect.call(this, "Deny", this.denyMethods));
 
       policy.policyDocument = doc;
+
+      // context which can be passed to the backend
+      // see https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-lambda-authorizer-output.html
+      policy.context = context;
 
       return policy;
     }

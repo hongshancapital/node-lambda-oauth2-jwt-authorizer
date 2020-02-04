@@ -54,7 +54,7 @@ exports.handler = function(event, context) {
       removed scp check, see commit log for details
     */
 
-    policy.allowAllMethods()
+    policy.allowAllMethods();
 
     return context.succeed(policy.build());
   })
