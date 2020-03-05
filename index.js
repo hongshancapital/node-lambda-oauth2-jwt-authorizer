@@ -56,7 +56,7 @@ exports.handler = function(event, context) {
 
     policy.allowAllMethods();
 
-    return context.succeed(policy.build());
+    return context.succeed(policy.build({ groups: jwt.claims.groups.join(',') }));
   })
   .catch(err => {
 
