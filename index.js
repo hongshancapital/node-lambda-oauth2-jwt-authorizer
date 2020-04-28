@@ -32,7 +32,7 @@ exports.handler = function(event, context) {
 
     var claims = jwt.claims;
 
-    console.log('request principal: ' + claims);
+    console.log('request principal: ' + JSON.stringify(claims));
 
     var apiOptions = {};
     const arnParts = event.methodArn.split(':');
@@ -56,7 +56,8 @@ exports.handler = function(event, context) {
 
     policy.allowAllMethods();
 
-    return context.succeed(policy.build({ groups: jwt.claims.groups.join(',') }));
+    return context.succeed(policy.build({ groups: 'Ad-Who2-Users' }));
+    // return context.succeed(policy.build({ groups: jwt.claims.groups.join(',') }));
   })
   .catch(err => {
 
