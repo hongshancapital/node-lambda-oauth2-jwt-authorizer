@@ -54,10 +54,12 @@ exports.handler = function(event, context) {
  
   var accessToken = arr[1];
 
+  console.log('Access token: ' + accessToken);
+
   oktaJwtVerifier.verifyAccessToken(accessToken, 'api://default')
   .then(jwt => {
     // the token is valid (per definition of 'valid' above)
-    console.log('request principal: ' + JSON.stringify(jwt.claims));
+    console.log('okta request principal: ' + JSON.stringify(jwt.claims));
 
     var policy = allowAccess(event, jwt.claims.sub);
 
@@ -70,8 +72,8 @@ exports.handler = function(event, context) {
     if (err){
       var decoded = jsonWebToken.decode(accessToken);
 
-      if (decoded?.appid != process.env.AAD_APPLICATION_ID){
-        console.error(`Decoded token is ${JSON.stringify(decoded)}`);
+      if (!decoded || decoded.appid != process.env.AAD_APPLICATION_ID){
+        console.error('Decoded token is ' + JSON.stringify(decoded));
         return context.fail('Unauthorized due to invalid aad application id and failed Okta auth');
       }
       var params = {
@@ -104,7 +106,7 @@ exports.handler = function(event, context) {
   
         response.on('error', (error) => {
           console.error(error);
-          console.error(`Decoded token is ${JSON.stringify(decoded)}`);
+          console.error('Decoded token is ' + JSON.stringify(decoded));
           return context.fail('Unauthorized due to AAD auth failed');
         });
       });
