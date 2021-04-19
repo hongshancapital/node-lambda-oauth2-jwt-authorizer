@@ -4,6 +4,7 @@
 require('dotenv').config();
 
 const OktaJwtVerifier = require('@okta/jwt-verifier');
+const { access } = require('fs');
 var https = require('https');
 const jsonWebToken = require('jsonwebtoken')
 
@@ -69,8 +70,9 @@ exports.handler = function(event, context) {
     if (err){
       var decoded = jsonWebToken.decode(accessToken);
 
-      if (decoded.appid != process.env.AAD_APPLICATION_ID){
-        return context.fail('Unauthorized');
+      if (decoded?.appid != process.env.AAD_APPLICATION_ID){
+        console.error(`Decoded token is ${JSON.stringify(decoded)}`);
+        return context.fail('Unauthorized due to invalid aad application id and failed Okta auth');
       }
       var params = {
         host: 'graph.microsoft.com',
@@ -89,8 +91,8 @@ exports.handler = function(event, context) {
         response.on('end', () => {
           let responseBody = JSON.parse(Buffer.concat(chunksOfData).toString());
           if (responseBody.userPrincipalName != decoded.upn){
-            console.log(`${responseBody.userPrincipalName} do not match with ${decoded.upn}`);
-            console.log(responseBody);
+            console.error(`${responseBody.userPrincipalName} do not match with ${decoded.upn}`);
+            console.error(responseBody);
             return context.fail('Unauthorized');
           }
           
@@ -101,8 +103,9 @@ exports.handler = function(event, context) {
         });
   
         response.on('error', (error) => {
-          console.log(error);
-          return context.fail('Unauthorized');
+          console.error(error);
+          console.error(`Decoded token is ${JSON.stringify(decoded)}`);
+          return context.fail('Unauthorized due to AAD auth failed');
         });
       });
       
