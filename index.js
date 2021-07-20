@@ -56,7 +56,7 @@ exports.handler = function(event, context) {
 
   console.log('Access token: ' + accessToken);
 
-  oktaJwtVerifier.verifyAccessToken(accessToken, 'api://default')
+  oktaJwtVerifier.verifyAccessToken(accessToken, process.env.AUDIENCE)
   .then(jwt => {
     // the token is valid (per definition of 'valid' above)
     console.log('okta request principal: ' + JSON.stringify(jwt.claims));
