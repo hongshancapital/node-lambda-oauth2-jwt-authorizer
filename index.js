@@ -71,8 +71,10 @@ exports.handler = function (event, context) {
       console.log("okta request principal: " + JSON.stringify(jwt.claims));
 
       var policy = allowAccess(event, jwt.claims.sub);
-
-      return context.succeed(policy.build({ groups: "Ad-Who2-Users" }));
+      console.log(`Auth succeed as ${jwt.claims.sub}`);
+      const newContext = policy.build({ principalId: transpileToComEmail(jwt.claims.sub) });
+      console.log(JSON.stringify(newContext));
+      return context.succeed(newContext);
       // return context.succeed(policy.build({ groups: jwt.claims.groups.join(',') }));
     })
     .catch((err) => {
@@ -118,8 +120,10 @@ exports.handler = function (event, context) {
             }
 
             var policy = allowAccess(event, responseBody.userPrincipalName);
-
-            return context.succeed(policy.build({ groups: "Ad-Who2-Users" }));
+            console.log(`Auth succeed as ${responseBody.userPrincipalName}`);
+            const newContext = policy.build({ principalId: transpileToComEmail(responseBody.userPrincipalName) });
+            console.log(JSON.stringify(newContext));
+            return context.succeed(newContext);
           });
 
           response.on("error", (error) => {
