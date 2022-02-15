@@ -88,10 +88,8 @@ exports.handler = function (event, context) {
             .filter((value) => !!value)
             .includes(decoded.appid)
         ) {
-          console.error("Decoded token is " + JSON.stringify(decoded));
-          return context.fail(
-            "Unauthorized due to invalid aad application id and failed Okta auth"
-          );
+          console.error("Decoded Okta token is " + JSON.stringify(decoded));
+          return context.fail('Unauthorized');
         }
         var params = {
           host: "graph.microsoft.com",
@@ -129,7 +127,7 @@ exports.handler = function (event, context) {
           response.on("error", (error) => {
             console.error(error);
             console.error("Decoded token is " + JSON.stringify(decoded));
-            return context.fail("Unauthorized due to AAD auth failed");
+            return context.fail('Unauthorized');;
           });
         });
       }
