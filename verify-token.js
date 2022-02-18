@@ -24,8 +24,10 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       console.log("okta request principal: " + JSON.stringify(jwt.claims));
 
       var policy = allowAccess(event, jwt.claims.sub);
-      
-      return context.succeed(policy.build({ groups: "Ad-Who2-Users" }));
+      console.log(`Auth succeed as ${jwt.claims.sub}`);
+      const newContext = policy.build({ principalId: transpileToComEmail(jwt.claims.sub) });
+      console.log(JSON.stringify(newContext));
+      return context.succeed(newContext);
       // return context.succeed(policy.build({ groups: jwt.claims.groups.join(',') }));
     })
     .catch((err) => {
@@ -33,14 +35,14 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       if (err) {
         var decoded = jsonWebToken.decode(accessToken);
 
-        if (!decoded ||
+        if (
+          !decoded ||
           ![process.env.AAD_APPLICATION_ID, process.env.AAD_CN_APPLICATION_ID]
             .filter((value) => !!value)
-            .includes(decoded.appid)) {
-          console.error("Decoded token is " + JSON.stringify(decoded));
-          return context.fail(
-            "Unauthorized due to invalid aad application id and failed Okta auth"
-          );
+            .includes(decoded.appid)
+        ) {
+          console.error("Decoded Okta token is " + JSON.stringify(decoded));
+          return context.fail('Unauthorized');
         }
         var params = {
           host: "graph.microsoft.com",
@@ -69,14 +71,16 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
             }
 
             var policy = allowAccess(event, responseBody.userPrincipalName);
-
-            return context.succeed(policy.build({ groups: "Ad-Who2-Users" }));
+            console.log(`Auth succeed as ${responseBody.userPrincipalName}`);
+            const newContext = policy.build({ principalId: transpileToComEmail(responseBody.userPrincipalName) });
+            console.log(JSON.stringify(newContext));
+            return context.succeed(newContext);
           });
 
           response.on("error", (error) => {
             console.error(error);
             console.error("Decoded token is " + JSON.stringify(decoded));
-            return context.fail("Unauthorized due to AAD auth failed");
+            return context.fail('Unauthorized');;
           });
         });
       }

@@ -3,3 +3,5 @@ dist
 .npmrc
 *.swp
 .DS_Store
+yarn.lock
+package-lock.json
