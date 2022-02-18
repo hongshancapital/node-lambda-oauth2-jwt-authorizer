@@ -8,8 +8,13 @@ const transpileToComEmail = (email) =>
 
 exports.wshandler = function(event, context) {        
    console.log('Received event:', JSON.stringify(event, null, 2));
-   var arr = event.headers.Authorization.split(" ");
-   var accessToken = arr[1];
+   var queryStringParameters = event.queryStringParameters;
+   var accessToken = queryStringParameters.AuthToken
+   if(!accessToken){
+      console.log(' AuthToken not fund:', JSON.stringify(event, null, 2));
+      var arr = event.headers.Authorization.split(" ");
+      var accessToken = arr[1];
+   }
    console.log("Access token: " + accessToken);
    return VerifyToken.verifyAccessToken(accessToken, event, context,allowAccess);
 }
