@@ -29,9 +29,12 @@
     "url": "https://github.com/mcguinness/node-lambda-oauth2-jwt-authorizer.git/issues"
   },
   "homepage": "https://github.com/mcguinness/node-lambda-oauth2-jwt-authorizer.git#readme",
+  "devDependencies": {
+    "lambda-local": "^2.0.1"
+  },
   "dependencies": {
-    "@okta/jwt-verifier": "^2.1.0",
-    "dotenv": "^7.0.0",
+    "@okta/jwt-verifier": "^2.3.0",
+    "dotenv": "^16.0.0",
     "jsonwebtoken": "^8.5.1"
   }
 }
