@@ -51,3 +51,4 @@ exports.handler = function (event, context) {
 
   return VerifyToken.verifyAccessToken(accessToken, event, context, allowAccess);
 };
+
