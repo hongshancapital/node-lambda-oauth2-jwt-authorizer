@@ -15,7 +15,13 @@ const oktaJwtVerifier = new OktaJwtVerifier({
   },
 });
 
+const transpileToComEmail = (email) =>
+email.endsWith("@sequoiacap.cn")
+  ? email.replace("@sequoiacap.cn", "@sequoiacap.com")
+  : email;
 
+
+module.exports.transpileToComEmail = transpileToComEmail;
 module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event, context,allowAccess) {
   oktaJwtVerifier
     .verifyAccessToken(accessToken, process.env.AUDIENCE)

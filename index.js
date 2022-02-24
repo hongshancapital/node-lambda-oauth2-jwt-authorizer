@@ -7,10 +7,7 @@ const VerifyToken = require("./verify-token.js");
 
 const AuthPolicy = require("./auth-policy");
 
-const transpileToComEmail = (email) =>
-  email.endsWith("@sequoiacap.cn")
-    ? email.replace("@sequoiacap.cn", "@sequoiacap.com")
-    : email;
+
 
 const allowAccess = (event, email) => {
   var apiOptions = {};
@@ -28,7 +25,7 @@ const allowAccess = (event, email) => {
   }
 
   var policy = new AuthPolicy(
-    transpileToComEmail(email),
+    VerifyToken.transpileToComEmail(email),
     awsAccountId,
     apiOptions
   );
