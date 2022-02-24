@@ -1,11 +1,5 @@
 const VerifyToken = require("./verify-token.js");
 
-const transpileToComEmail = (email) =>
-  email.endsWith("@sequoiacap.cn")
-    ? email.replace("@sequoiacap.cn", "@sequoiacap.com")
-    : email;
-
-
 exports.wshandler = function(event, context) {        
    console.log('Received event:', JSON.stringify(event, null, 2));
    var queryStringParameters = event.queryStringParameters;
@@ -42,6 +36,6 @@ var generatePolicy = function(event, effect, email) {
 }
     
 var allowAccess = function(event, email) {
-   return generatePolicy(event, 'Allow', transpileToComEmail(email));
+   return generatePolicy(event, 'Allow', VerifyToken.transpileToComEmail(email));
 }
 
