@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const OktaJwtVerifier = require("@okta/jwt-verifier");
 const { access } = require("fs");
-var https = require("https");
+const https = require("https");
 const jsonWebToken = require("jsonwebtoken");
 
 /******************************************************/
@@ -26,7 +26,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
   if ((event.headers['New-Authorizer'] && event.headers['New-Authorizer'] === 'MSAL' )
     || (event.headers['new-authorizer'] && event.headers['new-authorizer'] === 'MSAL' )) {
     // use MSAL to verify the token
-    var decoded = jsonWebToken.decode(accessToken);
+    const decoded = jsonWebToken.decode(accessToken);
     if (
       !decoded ||
       ![process.env.AAD_APPLICATION_ID, process.env.AAD_CN_APPLICATION_ID]
@@ -36,7 +36,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       console.error("Decoded MSAL token is invalid: " + JSON.stringify(decoded));
       return context.fail('Unauthorized');
     }
-    var params = {
+    const params = {
       host: "graph.microsoft.com",
       path: "/v1.0/me",
       port: 443,
@@ -62,7 +62,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
           return context.fail("Unauthorized");
         }
 
-        var policy = allowAccess(event, responseBody.userPrincipalName);
+        const policy = allowAccess(event, responseBody.userPrincipalName);
         console.log(`Auth succeed as ${responseBody.userPrincipalName}`);
         const newContext = policy.build({ principalId: transpileToComEmail(responseBody.userPrincipalName) });
         console.log(JSON.stringify(newContext));
@@ -84,7 +84,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       // the token is valid (per definition of 'valid' above)
       console.log("okta request principal: " + JSON.stringify(jwt.claims));
 
-      var policy = allowAccess(event, jwt.claims.sub);
+      const policy = allowAccess(event, jwt.claims.sub);
       console.log(`Auth succeed as ${jwt.claims.sub}`);
       const newContext = policy.build({ principalId: transpileToComEmail(jwt.claims.sub) });
       console.log(JSON.stringify(newContext));
@@ -93,7 +93,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
     })
     .catch((err) => {
       console.log(err);
-      var decoded = jsonWebToken.decode(accessToken);
+      const decoded = jsonWebToken.decode(accessToken);
 
       console.error("Decoded Okta token is " + JSON.stringify(decoded));
       return context.fail('Unauthorized');

@@ -24,7 +24,7 @@ const allowAccess = (event, email) => {
     resource += apiGatewayArnPart[3];
   }
 
-  var policy = new AuthPolicy(
+  const policy = new AuthPolicy(
     VerifyToken.transpileToComEmail(email),
     awsAccountId,
     apiOptions
@@ -40,9 +40,9 @@ const allowAccess = (event, email) => {
 };
 
 exports.handler = function (event, context) {
-  var arr = event.authorizationToken.split(" ");
+  const arr = event.authorizationToken.split(" ");
 
-  var accessToken = arr[1];
+  const accessToken = arr[1];
 
   console.log("Access token: " + accessToken);
 
