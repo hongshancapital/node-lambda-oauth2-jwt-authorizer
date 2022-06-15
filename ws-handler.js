@@ -2,20 +2,20 @@ const VerifyToken = require("./verify-token.js");
 
 exports.wshandler = function(event, context) {        
    console.log('Received event:', JSON.stringify(event, null, 2));
-   var queryStringParameters = event.queryStringParameters;
+   const queryStringParameters = event.queryStringParameters;
    var accessToken = queryStringParameters.AuthToken
    if(!accessToken){
       console.log(' AuthToken not fund:', JSON.stringify(event, null, 2));
-      var arr = event.headers.Authorization.split(" ");
+      const arr = event.headers.Authorization.split(" ");
       var accessToken = arr[1];
    }
    console.log("Access token: " + accessToken);
    return VerifyToken.verifyAccessToken(accessToken, event, context,allowAccess);
 }
     
-var generatePolicy = function(event, effect, email) {
+const generatePolicy = function(event, effect, email) {
    var authResponse = {};
-   var resource = event.methodArn;
+   const resource = event.methodArn;
     authResponse.principalId = email;
    if (effect) {
        var policyDocument = {};
@@ -35,7 +35,7 @@ var generatePolicy = function(event, effect, email) {
    return authResponse;
 }
     
-var allowAccess = function(event, email) {
+const allowAccess = function(event, email) {
    return generatePolicy(event, 'Allow', VerifyToken.transpileToComEmail(email));
 }
 
