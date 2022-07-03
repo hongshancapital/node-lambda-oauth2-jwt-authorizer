@@ -20,13 +20,8 @@ email.endsWith("@sequoiacap.cn")
   ? email.replace("@sequoiacap.cn", "@sequoiacap.com")
   : email;
 
-
-module.exports.transpileToComEmail = transpileToComEmail;
-module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event, context,allowAccess) {
-  if ((event.headers['New-Authorizer'] && event.headers['New-Authorizer'] === 'MSAL' )
-    || (event.headers['new-authorizer'] && event.headers['new-authorizer'] === 'MSAL' )) {
-    // use MSAL to verify the token
-    const decoded = jsonWebToken.decode(accessToken);
+const validateMSALToken = (accessToken, event, context, allowAccess) => {
+  const decoded = jsonWebToken.decode(accessToken);
     if (
       !decoded ||
       ![process.env.AAD_APPLICATION_ID, process.env.AAD_CN_APPLICATION_ID]
@@ -75,6 +70,14 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
         return context.fail('Unauthorized');;
       });
     });
+}
+
+module.exports.transpileToComEmail = transpileToComEmail;
+module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event, context,allowAccess) {
+  if ((event.headers['New-Authorizer'] && event.headers['New-Authorizer'] === 'MSAL' )
+    || (event.headers['new-authorizer'] && event.headers['new-authorizer'] === 'MSAL' )) {
+    // use MSAL to verify the token
+    return validateMSALToken(accessToken, event, context, allowAccess);
   }
   else {
     // use okta
@@ -96,7 +99,8 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       const decoded = jsonWebToken.decode(accessToken);
 
       console.error("Decoded Okta token is " + JSON.stringify(decoded));
-      return context.fail('Unauthorized');
+      // Try MSAL to verify the token
+      return validateMSALToken(accessToken, event, context, allowAccess);
     });
   }
   
