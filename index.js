@@ -44,8 +44,6 @@ exports.handler = function (event, context) {
 
   const accessToken = arr[1];
 
-  console.log("Access token: " + accessToken);
-
   return VerifyToken.verifyAccessToken(accessToken, event, context, allowAccess);
 };
 
