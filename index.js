@@ -14,6 +14,7 @@ const allowAccess = (event, email) => {
   const arnParts = event.methodArn.split(":");
   const apiGatewayArnPart = arnParts[5].split("/");
   const awsAccountId = arnParts[4];
+  apiOptions.start = arnParts[0] + ":" + arnParts[1] + ":"  + arnParts[2] + ":";
   apiOptions.region = arnParts[3];
   apiOptions.restApiId = apiGatewayArnPart[0];
   apiOptions.stage = apiGatewayArnPart[1];

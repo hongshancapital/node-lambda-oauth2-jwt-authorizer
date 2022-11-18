@@ -63,6 +63,11 @@ function AuthPolicy(principal, awsAccountId, apiOptions) {
   this.allowMethods = [];
   this.denyMethods = [];
 
+  if (!apiOptions || !apiOptions.start) {
+    this.start = "arn:aws:execute-api:";
+  } else {
+    this.start = apiOptions.start;
+  }
   if (!apiOptions || !apiOptions.restApiId) {
     this.restApiId = "*";
   } else {
@@ -125,7 +130,7 @@ AuthPolicy.prototype = (function() {
     if (resource.substring(0, 1) == "/") {
       cleanedResource = resource.substring(1, resource.length);
     }
-    var resourceArn = "arn:aws:execute-api:" +
+    var resourceArn = this.start +
       this.region + ":" +
       this.awsAccountId + ":" +
       this.restApiId + "/" +
