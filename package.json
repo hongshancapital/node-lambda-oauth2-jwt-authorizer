@@ -35,6 +35,6 @@
   "dependencies": {
     "@okta/jwt-verifier": "^2.3.0",
     "dotenv": "^16.0.0",
-    "jsonwebtoken": "^8.5.1"
+    "jsonwebtoken": "^9.0.0"
   }
 }
