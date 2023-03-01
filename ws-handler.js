@@ -10,7 +10,7 @@ exports.wshandler = function(event, context) {
       var accessToken = arr[1];
    }
    console.log("Access token: " + accessToken);
-   return VerifyToken.verifyAccessToken(accessToken, event, context,allowAccess);
+   return VerifyToken.verifyAccessToken(accessToken, event, context,wsAllowAccess);
 }
     
 const generatePolicy = function(event, effect, email) {
@@ -35,7 +35,7 @@ const generatePolicy = function(event, effect, email) {
    return authResponse;
 }
     
-const allowAccess = function(event, email) {
+const wsAllowAccess = function(event, email) {
    return generatePolicy(event, 'Allow', VerifyToken.transpileToComEmail(email));
 }
 

@@ -36,8 +36,9 @@ const getSigningKeys = (header, callback) => {
 
 module.exports.transpileToComEmail = transpileToComEmail;
 module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event, context,allowAccess) {
-  if ((event.headers && event.headers['New-Authorizer'] && event.headers['New-Authorizer'] === 'MSAL' )
-    || (event.headers && event.headers['new-authorizer'] && event.headers['new-authorizer'] === 'MSAL' )) {
+  if ((event.headers['New-Authorizer'] && event.headers['New-Authorizer'] === 'MSAL' )
+    || (event.headers['new-authorizer'] && event.headers['new-authorizer'] === 'MSAL' ) 
+    || (event.queryStringParameters['newAuthorizer'] && event.queryStringParameters['newAuthorizer'] === 'MSAL' )) {
     // use MSAL to verify the token
     const decoded = jsonWebToken.decode(accessToken);
     if (
@@ -54,18 +55,18 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       audience: decoded.aud,
       issuer: decoded.iss
     }
-
+    
+   
     jsonWebToken.verify(accessToken, getSigningKeys, validationOptions, (err, payload) => {
       if (err) {
           console.log(err);
-          console.log(payload);
+          console.log(JSON.stringify(event));
           return context.fail("Unauthorized");
       }
       else {
         const policy = allowAccess(event, decoded.upn);
         console.log(`Auth succeed as ${decoded.upn}`);
         const newContext = policy.build({ principalId: transpileToComEmail(decoded.upn) });
-        console.log(JSON.stringify(newContext));
         return context.succeed(newContext);
       }
 
@@ -82,9 +83,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       const policy = allowAccess(event, jwt.claims.sub);
       console.log(`Auth succeed as ${jwt.claims.sub}`);
       const newContext = policy.build({ principalId: transpileToComEmail(jwt.claims.sub) });
-      console.log(JSON.stringify(newContext));
       return context.succeed(newContext);
-      // return context.succeed(policy.build({ groups: jwt.claims.groups.join(',') }));
     })
     .catch((err) => {
       console.log(err);
