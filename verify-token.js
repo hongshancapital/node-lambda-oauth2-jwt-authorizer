@@ -16,6 +16,14 @@ const oktaJwtVerifier = new OktaJwtVerifier({
   },
 });
 
+const deprecatedOktaJwtVerifier = new OktaJwtVerifier({
+  issuer: process.env.DEPRECATED_ISSUER, // required
+  clientId: process.env.DEPRECATED_CLIENT_ID, // required
+  assertClaims: {
+    aud: process.env.DEPRECATED_AUDIENCE,
+  },
+});
+
 const transpileToComEmail = (email) =>
 email.endsWith("@sequoiacap.cn")
   ? email.replace("@sequoiacap.cn", "@sequoiacap.com")
@@ -90,8 +98,30 @@ module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event
       const decoded = jsonWebToken.decode(accessToken);
 
       console.error("Decoded Okta token is " + JSON.stringify(decoded));
-      return context.fail('Unauthorized');
+      // 等去掉deprecated Okta verifier的时候，这里可以恢复return
+      // return context.fail('Unauthorized');
+
+      deprecatedOktaJwtVerifier
+      .verifyAccessToken(accessToken, process.env.DEPRECATED_AUDIENCE)
+      .then((jwt) => {
+        // the token is valid (per definition of 'valid' above)
+        console.log("okta request principal: " + JSON.stringify(jwt.claims));
+
+        const policy = allowAccess(event, jwt.claims.sub);
+        console.log(`Auth succeed as ${jwt.claims.sub}`);
+        const newContext = policy.build({ principalId: transpileToComEmail(jwt.claims.sub) });
+        return context.succeed(newContext);
+      })
+      .catch((err) => {
+        console.log(err);
+        const decoded = jsonWebToken.decode(accessToken);
+
+        console.error("Decoded Okta token is " + JSON.stringify(decoded));
+        return context.fail('Unauthorized');
+      });
     });
+    
+    
   }
   
 }
