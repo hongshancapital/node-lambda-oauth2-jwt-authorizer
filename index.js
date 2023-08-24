@@ -9,7 +9,7 @@ const AuthPolicy = require("./auth-policy");
 
 
 
-const allowAccess = (event, email) => {
+const httpAllowAccess = (event, email) => {
   var apiOptions = {};
   const arnParts = event.methodArn.split(":");
   const apiGatewayArnPart = arnParts[5].split("/");
@@ -40,13 +40,47 @@ const allowAccess = (event, email) => {
   return policy;
 };
 
-exports.handler = function (event, context) {
-  const arr = event.authorizationToken.split(" ");
+const generatePolicy = function(event, effect, email) {
+  var authResponse = {};
+  const resource = event.methodArn;
+   authResponse.principalId = email;
+  if (effect) {
+      var policyDocument = {};
+       policyDocument.Version = '2012-10-17'; // default version
+      policyDocument.Statement = [];
+      var statementOne = {};
+       statementOne.Action = 'execute-api:Invoke'; // default action
+      statementOne.Effect = effect;
+       statementOne.Resource = resource;
+       policyDocument.Statement[0] = statementOne;
+       authResponse.policyDocument = policyDocument;
+   }   
+   authResponse.build = function(context={}){
+     authResponse.context=context;
+     return authResponse;
+   };
+  return authResponse;
+}
+   
+const wsAllowAccess = function(event, email) {
+  return generatePolicy(event, 'Allow', VerifyToken.transpileToComEmail(email));
+}
 
-  const accessToken = arr[1];
+exports.handler = function (event, context) {
+  let accessToken;
+  let allowAccessFunction;
+  if (event.authorizationToken) {
+    accessToken = event.authorizationToken.split(" ")[1];
+    allowAccessFunction = httpAllowAccess;
+  } else if (event.queryStringParameters.AuthToken) {
+    accessToken = event.queryStringParameters.AuthToken;
+    allowAccessFunction = wsAllowAccess;
+  } else {
+    console.error("Invalid auth params");
+  }
 
   console.log("Access token: " + accessToken);
 
-  return VerifyToken.verifyAccessToken(accessToken, event, context, allowAccess);
+  return VerifyToken.verifyAccessToken(accessToken, event, context, allowAccessFunction);
 };
 
