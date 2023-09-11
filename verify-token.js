@@ -44,9 +44,9 @@ const getSigningKeys = (header, callback) => {
 
 module.exports.transpileToComEmail = transpileToComEmail;
 module.exports.verifyAccessToken = function verifyAccessToken(accessToken, event, context,allowAccess) {
-  if ((event.headers['New-Authorizer'] && event.headers['New-Authorizer'] === 'MSAL' )
-    || (event.headers['new-authorizer'] && event.headers['new-authorizer'] === 'MSAL' ) 
-    || (event.queryStringParameters['newAuthorizer'] && event.queryStringParameters['newAuthorizer'] === 'MSAL' )) {
+  if ((event.headers && event.headers['New-Authorizer'] === 'MSAL' )
+    || (event.headers && event.headers['new-authorizer'] === 'MSAL' ) 
+    || (event.queryStringParameters && event.queryStringParameters['newAuthorizer'] === 'MSAL' )) {
     // use MSAL to verify the token
     const decoded = jsonWebToken.decode(accessToken);
     if (
