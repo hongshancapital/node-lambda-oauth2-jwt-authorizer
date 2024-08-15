@@ -67,6 +67,9 @@ const wsAllowAccess = function(event, email) {
 }
 
 exports.handler = function (event, context) {
+  if (event.requestContext) {
+    console.log("x-apigw-request-id: " + event.requestContext.requestId);
+  }
   let accessToken;
   let allowAccessFunction;
   if (event.authorizationToken) {
