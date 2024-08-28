@@ -75,6 +75,10 @@ exports.handler = function (event, context) {
   if (event.authorizationToken) {
     accessToken = event.authorizationToken.split(" ")[1];
     allowAccessFunction = httpAllowAccess;
+  } else if(event.headers && (event.headers.Authorization || event.headers.authorization)) {
+    let bearerToken = event.headers.Authorization || event.headers.authorization;
+    accessToken = bearerToken.split(" ")[1];
+    allowAccessFunction = httpAllowAccess;
   } else if (event.queryStringParameters.AuthToken) {
     accessToken = event.queryStringParameters.AuthToken;
     allowAccessFunction = wsAllowAccess;
