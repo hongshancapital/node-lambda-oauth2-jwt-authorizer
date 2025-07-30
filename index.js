@@ -86,7 +86,5 @@ exports.handler = function (event, context) {
     console.error("Invalid auth params");
   }
 
-  console.log("Access token: " + accessToken);
-
   return VerifyToken.verifyAccessToken(accessToken, event, context, allowAccessFunction);
 };
