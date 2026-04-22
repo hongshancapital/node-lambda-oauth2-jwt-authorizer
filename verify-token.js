@@ -2,8 +2,12 @@ require("dotenv").config();
 
 const OktaJwtVerifier = require("@okta/jwt-verifier");
 const jsonWebToken = require("jsonwebtoken");
+const crypto = require("crypto");
 const jwksClient = require("jwks-rsa");
 const keyCache = require("./key-cache");
+
+const tokenHash = (token) =>
+  crypto.createHash("sha256").update(token).digest("hex").substring(0, 32);
 
 /******************************************************/
 
@@ -105,7 +109,10 @@ module.exports.verifyAccessToken = function verifyAccessToken(
         } else {
           const policy = allowAccess(event, decoded.upn);
           console.log(`Auth succeed as ${decoded.upn}`);
-          const newContext = policy.build({ principalId: decoded.upn });
+          const newContext = policy.build({
+            principalId: decoded.upn,
+            tokenHash: tokenHash(accessToken),
+          });
           return context.succeed(newContext);
         }
       }
@@ -144,6 +151,7 @@ module.exports.verifyAccessToken = function verifyAccessToken(
           console.log(`Auth succeed as ${decoded.upn}`);
           const newContext = policy.build({
             principalId: transpileToComEmail(decoded.upn),
+            tokenHash: tokenHash(accessToken),
           });
           return context.succeed(newContext);
         }
@@ -159,7 +167,10 @@ module.exports.verifyAccessToken = function verifyAccessToken(
 
         const policy = allowAccess(event, jwt.claims.sub);
         console.log(`Auth succeed as ${jwt.claims.sub}`);
-        const newContext = policy.build({ principalId: jwt.claims.sub });
+        const newContext = policy.build({
+          principalId: jwt.claims.sub,
+          tokenHash: tokenHash(accessToken),
+        });
         return context.succeed(newContext);
       })
       .catch((err) => {
