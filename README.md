@@ -56,9 +56,25 @@ AUDIENCE -> from your Okta authorization server
 
 CLIENT_ID -> a client_id from your Okta tenant
 
+AAD_APPLICATION_ID -> the Azure AD (global) application id used to verify MSAL tokens
+
+AAD_CN_APPLICATION_ID -> the Azure AD (China) application id used to verify MSAL-CN tokens
+
 The `audience` value should uniquely identify your AWS API Gateway deployment. You should assign unique audiences for each API Gateway authorizer instance so that a token intended for one gateway is not valid for another.
 
 Click **Save** to create your function.
+
+### Token verification routing
+
+The authorizer selects its verification strategy from the JWT's `iss` (issuer) claim, not from any client-supplied header:
+
+| `iss` prefix | Verification |
+|---|---|
+| `https://sts.windows.net` | MSAL (Azure AD global) |
+| `https://sts.chinacloudapi.cn` | MSAL-CN (Azure AD China) |
+| `https://hongshan.okta.com` | Okta |
+
+If the `iss` claim does not match any of the above prefixes, the request is rejected with `Unauthorized`. The legacy `New-Authorizer` header (values `MSAL` / `MSAL-CN`) is still honored as a transitional fallback only when the `iss` cannot be recognized; it is deprecated and will be removed in a future release.
 
 ### Creating an IAM Role for the Lambda function
 
