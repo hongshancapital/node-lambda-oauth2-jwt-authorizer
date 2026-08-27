@@ -1,0 +1,5 @@
+{
+  "type": "TOKEN",
+  "authorizationToken": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2hvbmdzaGFuLm9rdGEuY29tL29hdXRoMi9hdXMxMjMiLCJhcHBpZCI6IngiLCJ1cG4iOiJ0ZXN0QGhvbmdzaGFuLmNuIiwic3ViIjoidGVzdEBva3RhLmNvbSJ9.gixDCAVszWBbHgomIxMv6-nSAy8JxiESpEDl5HmI3Qo",
+  "methodArn": "arn:aws:execute-api:us-west-2:1234567890:apiId/stage/method/resourcePath"
+}
