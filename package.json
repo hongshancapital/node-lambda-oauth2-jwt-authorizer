@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mcguinness/node-lambda-oauth2-jwt-authorizer.git"
+    "url": "git+https://github.com/hongshancapital/node-lambda-oauth2-jwt-authorizer.git"
   },
   "keywords": [
     "oauth2",
@@ -26,9 +26,9 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mcguinness/node-lambda-oauth2-jwt-authorizer.git/issues"
+    "url": "https://github.com/hongshancapital/node-lambda-oauth2-jwt-authorizer.git/issues"
   },
-  "homepage": "https://github.com/mcguinness/node-lambda-oauth2-jwt-authorizer.git#readme",
+  "homepage": "https://github.com/hongshancapital/node-lambda-oauth2-jwt-authorizer.git#readme",
   "devDependencies": {
     "lambda-local": "^2.0.1"
   },
