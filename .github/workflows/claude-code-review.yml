@@ -1,0 +1,28 @@
+name: Claude
+
+on:
+  # 自动 Code Review：PR 打开或更新时触发
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened]
+
+  # @claude：在 PR 中 @claude 时触发
+  issue_comment:
+    types: [created]
+
+jobs:
+  # ============================================================
+  # Code Review（PR 打开/更新时自动触发，或在 PR 中 @claude）
+  # ============================================================
+  claude-review:
+    if: |
+      github.event_name == 'pull_request' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '@claude')
+      )
+    uses: hongshancapital/dagon/.github/workflows/claude-auto-review.yml@master
+    secrets: inherit
+    with:
+      user_request: ${{ github.event_name == 'issue_comment' && github.event.comment.body || '' }}
