@@ -5,6 +5,8 @@ const jsonWebToken = require("jsonwebtoken");
 const crypto = require("crypto");
 const jwksClient = require("jwks-rsa");
 const keyCache = require("./key-cache");
+const coworkKeys = require("./cowork-keys");
+const { buildCoworkPolicy } = require("./cowork-scope-policy");
 
 const tokenHash = (token) =>
   crypto.createHash("sha256").update(token).digest("hex").substring(0, 32);
@@ -38,6 +40,7 @@ const AUTHORIZER_TYPE = {
   MSAL: "MSAL",
   MSAL_CN: "MSAL-CN",
   OKTA: "OKTA",
+  COWORK_AGENT: "COWORK_AGENT",
 };
 
 // issuer 前缀 → authorizer 类型，按声明 `iss` 自动路由验签方式
@@ -45,6 +48,7 @@ const ISSUER_PREFIXES = [
   { prefix: "https://sts.windows.net", type: AUTHORIZER_TYPE.MSAL },
   { prefix: "https://sts.chinacloudapi.cn", type: AUTHORIZER_TYPE.MSAL_CN },
   { prefix: "https://hongshan.okta.com", type: AUTHORIZER_TYPE.OKTA },
+  { prefix: "https://cowork.hongshan.com", type: AUTHORIZER_TYPE.COWORK_AGENT },
 ];
 
 /**
@@ -172,6 +176,62 @@ const verifyAzureToken = (
   );
 };
 
+const getSigningKeysForCowork = (header, callback) => {
+  coworkKeys
+    .getPublicKey(header.kid)
+    .then((signingKey) => callback(null, signingKey))
+    .catch((err) => callback(err));
+};
+
+/**
+ * 校验 daedalus 签发的 cowork run token（RS256，outbound aud = hongshan-lite-api）。
+ *
+ * 与 Okta/MSAL 分支的关键差异：
+ * - 强制 `algorithms: ['RS256']`（既有 Azure 分支未传，属既存弱点，本分支不沿袭）。
+ * - `issuer` 用 process.env.COWORK_ISSUER 精确比对——绝不能用 decoded.iss
+ *   （token 自证），否则 dev 签的 token 能在 prod 通过。
+ * - policy 不用 allowAllMethods，改按 `scp` 声明经 cowork-scope-policy 逐条放行。
+ * - principalId = transpileToComEmail(sub)，与 daedalus 的 sub 归一对齐。
+ */
+const verifyCoworkAgentToken = (accessToken, event, context) => {
+  const issuer = process.env.COWORK_ISSUER;
+  if (!issuer) {
+    console.error("COWORK_ISSUER not configured");
+    return context.fail("Unauthorized");
+  }
+
+  jsonWebToken.verify(
+    accessToken,
+    getSigningKeysForCowork,
+    {
+      algorithms: ["RS256"],
+      issuer,
+      audience: process.env.AUDIENCE,
+    },
+    (err, payload) => {
+      if (err) {
+        console.log(err);
+        return context.fail("Unauthorized");
+      }
+      // sub 是身份主依据，缺失/非字符串时 fail-closed——否则 transpileToComEmail
+      // 会对 undefined 抛 TypeError，令 Lambda 报 500 而非显式 Unauthorized。
+      if (typeof payload.sub !== "string" || payload.sub.trim() === "") {
+        console.error("cowork-agent token missing/invalid sub claim");
+        return context.fail("Unauthorized");
+      }
+      const principalId = transpileToComEmail(payload.sub);
+      const policy = buildCoworkPolicy(event, principalId, payload.scp);
+      console.log(`Auth succeed as cowork-agent ${principalId}`);
+      const newContext = policy.build({
+        principalId,
+        tokenHash: tokenHash(accessToken),
+        coworkRunId: payload.jti,
+      });
+      return context.succeed(newContext);
+    }
+  );
+};
+
 const verifyOktaToken = (accessToken, event, context, allowAccess) => {
   oktaJwtVerifier
     .verifyAccessToken(accessToken, process.env.AUDIENCE)
@@ -238,6 +298,9 @@ module.exports.verifyAccessToken = function verifyAccessToken(
 
   if (authorizerType === AUTHORIZER_TYPE.OKTA) {
     return verifyOktaToken(accessToken, event, context, allowAccess);
+  }
+  if (authorizerType === AUTHORIZER_TYPE.COWORK_AGENT) {
+    return verifyCoworkAgentToken(accessToken, event, context);
   }
   return verifyAzureToken(
     authorizerType,
