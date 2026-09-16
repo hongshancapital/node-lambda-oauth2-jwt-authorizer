@@ -7,6 +7,7 @@
  * 用法：node test/cowork-agent-auth.test.cjs
  * 自包含：运行时生成测试密钥对，不依赖真实私钥；COWORK_ISSUER / AUDIENCE 从
  * process.env 注入（AUDIENCE 缺省 'hongshan-lite-api'，与 daedalus 出站 aud 一致）。
+ * 退出码 0 = 全部符合预期。
  */
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -53,18 +54,28 @@ const sign = (opts = {}) =>
   );
 
 (async () => {
+  const results = [];
+  const check = (label, allowed, expectAllow) => {
+    const pass = allowed === expectAllow;
+    results.push(pass);
+    console.log(
+      `${label} →`,
+      allowed ? (expectAllow ? 'ALLOW ✓' : 'ALLOW (BUG!)') : expectAllow ? 'DENY (BUG!)' : 'DENY ✓',
+    );
+  };
+
   // 1. 合法 token
   let r = await run(sign(), 'valid');
-  console.log('valid →', r.ok ? 'ALLOW principal=' + r.auth.principalId : 'DENY ' + r.msg);
+  check('valid', r.ok, true);
 
   // 2. 错 issuer（dev 签的不能在 prod 过）
   r = await run(sign({ issuer: 'https://cowork-dev.hongshan.com' }), 'wrong-issuer');
-  console.log('wrong-issuer →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  check('wrong-issuer', r.ok, false);
 
   // 3. alg=none
   const noneToken = jwt.sign({ scp: [] }, Buffer.alloc(0), { algorithm: 'none' });
   r = await run(noneToken, 'alg-none');
-  console.log('alg-none →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  check('alg-none', r.ok, false);
 
   // 4. HS256 用公钥当 HMAC 密钥（经典算法混淆攻击）
   try {
@@ -74,16 +85,21 @@ const sign = (opts = {}) =>
       audience: process.env.AUDIENCE,
     });
     r = await run(hsToken, 'alg-confusion');
-    console.log('alg-confusion →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+    check('alg-confusion', r.ok, false);
   } catch (e) {
+    results.push(true);
     console.log('alg-confusion → sign error (skipped):', e.message);
   }
 
   // 5. 未知 kid
   r = await run(sign({ keyid: 'unknown-kid' }), 'unknown-kid');
-  console.log('unknown-kid →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  check('unknown-kid', r.ok, false);
 
   // 6. 错 audience
   r = await run(sign({ audience: 'other-api' }), 'wrong-audience');
-  console.log('wrong-audience →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  check('wrong-audience', r.ok, false);
+
+  const failed = results.filter((x) => !x).length;
+  console.log(`\n${results.length - failed}/${results.length} passed`);
+  process.exit(failed === 0 ? 0 : 1);
 })();

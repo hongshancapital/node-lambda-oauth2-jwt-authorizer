@@ -58,9 +58,19 @@ CLIENT_ID -> a client_id from your Okta tenant
 
 AAD_APPLICATION_ID -> the Azure AD (global) application id used to verify MSAL tokens
 
+AAD_TENANT_ID -> the Azure AD (global) tenant id; pins the accepted token issuer
+
+AAD_AUDIENCE -> expected `aud` for MSAL tokens; comma-separated for multiple values
+
 AAD_CN_APPLICATION_ID -> the Azure AD (China) application id used to verify MSAL-CN tokens
 
+AAD_CN_TENANT_ID -> the Azure AD (China) tenant id; pins the accepted token issuer
+
+AAD_CN_AUDIENCE -> expected `aud` for MSAL-CN tokens; comma-separated for multiple values
+
 The `audience` value should uniquely identify your AWS API Gateway deployment. You should assign unique audiences for each API Gateway authorizer instance so that a token intended for one gateway is not valid for another.
+
+**Note on the `AAD_*_TENANT_ID` / `AAD_*_AUDIENCE` variables:** when either is unset, that individual check is skipped and a warning is logged (`... not configured, skipping ... validation`). This fail-open default exists so that deploying this code without the variables configured is not a breaking change. **It also means the tenant/audience restriction is not in effect until you set them** — set all four based on your real tokens, then confirm the `skipping ... validation` warnings stop appearing in CloudWatch. Note that `AAD_AUDIENCE` is unrelated to `AUDIENCE`: the latter is the Okta audience, the former is the expected `aud` of Azure AD tokens.
 
 Click **Save** to create your function.
 
@@ -75,6 +85,8 @@ The authorizer selects its verification strategy from the JWT's `iss` (issuer) c
 | `https://hongshan.okta.com` | Okta |
 
 If the `iss` claim does not match any of the above prefixes, the request is rejected with `Unauthorized`. The legacy `New-Authorizer` header (values `MSAL` / `MSAL-CN`) is still honored as a transitional fallback only when the `iss` cannot be recognized; it is deprecated and will be removed in a future release.
+
+For the two Azure branches, the token is additionally checked against `AAD_TENANT_ID` / `AAD_AUDIENCE` (or the `AAD_CN_*` equivalents) and is accepted only if signed with `RS256`. Because an Azure AD v1.0 `iss` embeds the tenant id (`https://sts.windows.net/{tenant-id}/`), pinning the issuer is what pins the tenant. The Okta branch uses `@okta/jwt-verifier` with `ISSUER` / `AUDIENCE` instead.
 
 ### Creating an IAM Role for the Lambda function
 
@@ -195,6 +207,27 @@ You can use Postman to test the REST API
 This sample currently enforces scope-based access to API resources using the `scp` claim in the JWT.  The `api:read` scope is required for `GET` requests and `api:write` scope for `POST`, `PUT`, `PATCH`, or `DELETE` requests.
 
 To add your own scopes and policies, update `index.js` with your authorization requirements.
+
+## Testing
+
+```bash
+yarn test        # or: npm test
+```
+
+Runs every `test/*.test.cjs` suite and exits non-zero if any fail. All suites are offline and deterministic — no real IdP credentials or network access required, so they run anywhere:
+
+- `routing.test.cjs` — the `iss` → authorizer routing table, including each `test/event-*.json` fixture and edge cases (missing / non-string `iss`, unsupported AAD v2.0 issuer).
+- `azure-token-validation.test.cjs` — that the Azure tenant / audience validation options really do reject the wrong tenant, the wrong audience, the wrong cloud, `alg=none`, and HS256 algorithm confusion.
+- `cowork-agent-auth.test.cjs` — the `cowork-agent` verification branch (issuer pinning, `scp` → policy, unknown `kid`).
+- `smoke.test.cjs` — runs the real `index.js` handler via `lambda-local` over each fixture and asserts the routing decision and the rejection. Because the fixtures are not signed by a real IdP, the expected outcome is `Unauthorized`; the assertion is on *why* it was rejected, not on success.
+
+Add a new suite by dropping another `test/*.test.cjs` file into `test/` — no config change needed.
+
+To exercise the authorizer manually against a real token, replace the `authorizationToken` in a fixture and run:
+
+```bash
+./node_modules/.bin/lambda-local --timeout 300 -l index.js -h handler -e test/event-okta.json
+```
 
 ## Manual Deployment
 
