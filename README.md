@@ -208,6 +208,27 @@ This sample currently enforces scope-based access to API resources using the `sc
 
 To add your own scopes and policies, update `index.js` with your authorization requirements.
 
+## Testing
+
+```bash
+yarn test        # or: npm test
+```
+
+Runs every `test/*.test.cjs` suite and exits non-zero if any fail. All suites are offline and deterministic — no real IdP credentials or network access required, so they run anywhere:
+
+- `routing.test.cjs` — the `iss` → authorizer routing table, including each `test/event-*.json` fixture and edge cases (missing / non-string `iss`, unsupported AAD v2.0 issuer).
+- `azure-token-validation.test.cjs` — that the Azure tenant / audience validation options really do reject the wrong tenant, the wrong audience, the wrong cloud, `alg=none`, and HS256 algorithm confusion.
+- `cowork-agent-auth.test.cjs` — the `cowork-agent` verification branch (issuer pinning, `scp` → policy, unknown `kid`).
+- `smoke.test.cjs` — runs the real `index.js` handler via `lambda-local` over each fixture and asserts the routing decision and the rejection. Because the fixtures are not signed by a real IdP, the expected outcome is `Unauthorized`; the assertion is on *why* it was rejected, not on success.
+
+Add a new suite by dropping another `test/*.test.cjs` file into `test/` — no config change needed.
+
+To exercise the authorizer manually against a real token, replace the `authorizationToken` in a fixture and run:
+
+```bash
+./node_modules/.bin/lambda-local --timeout 300 -l index.js -h handler -e test/event-okta.json
+```
+
 ## Manual Deployment
 
 ### Install Dependencies
