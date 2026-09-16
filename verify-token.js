@@ -43,10 +43,15 @@ const AUTHORIZER_TYPE = {
   COWORK_AGENT: "COWORK_AGENT",
 };
 
+// Azure AD 两个 cloud 的 issuer base。路由前缀（下方 ISSUER_PREFIXES）与精确
+// issuer 校验（buildAzureValidationOptions）共用，避免两处字符串各写一份而漂移。
+const AZURE_ISSUER_BASE = "https://sts.windows.net";
+const AZURE_CN_ISSUER_BASE = "https://sts.chinacloudapi.cn";
+
 // issuer 前缀 → authorizer 类型，按声明 `iss` 自动路由验签方式
 const ISSUER_PREFIXES = [
-  { prefix: "https://sts.windows.net", type: AUTHORIZER_TYPE.MSAL },
-  { prefix: "https://sts.chinacloudapi.cn", type: AUTHORIZER_TYPE.MSAL_CN },
+  { prefix: AZURE_ISSUER_BASE, type: AUTHORIZER_TYPE.MSAL },
+  { prefix: AZURE_CN_ISSUER_BASE, type: AUTHORIZER_TYPE.MSAL_CN },
   { prefix: "https://hongshan.okta.com", type: AUTHORIZER_TYPE.OKTA },
   { prefix: "https://cowork.hongshan.com", type: AUTHORIZER_TYPE.COWORK_AGENT },
 ];
@@ -116,20 +121,83 @@ const resolveAuthorizerTypeByHeader = (event) => {
     : null;
 };
 
-// 两种 Azure 验签方式共用一个流程，仅 appId / 密钥来源 / principalId 生成方式不同
+// 两种 Azure 验签方式共用一个流程，仅 issuer base / appId / tenantId / audience /
+// 密钥来源 / principalId 生成方式不同。env 一律惰性读取（`() => process.env.X`），
+// 便于测试在 require 之后再改环境变量。
 const AZURE_AUTHORIZERS = {
   [AUTHORIZER_TYPE.MSAL]: {
     label: "MSAL",
+    issuerBase: AZURE_ISSUER_BASE,
     getAppId: () => process.env.AAD_APPLICATION_ID,
+    getTenantId: () => process.env.AAD_TENANT_ID,
+    getAudience: () => process.env.AAD_AUDIENCE,
+    tenantEnvName: "AAD_TENANT_ID",
+    audienceEnvName: "AAD_AUDIENCE",
     getSigningKeys,
     toPrincipalId: (upn) => upn, // 保持原行为：不 transpile
   },
   [AUTHORIZER_TYPE.MSAL_CN]: {
     label: "MSAL-CN",
+    issuerBase: AZURE_CN_ISSUER_BASE,
     getAppId: () => process.env.AAD_CN_APPLICATION_ID,
+    getTenantId: () => process.env.AAD_CN_TENANT_ID,
+    getAudience: () => process.env.AAD_CN_AUDIENCE,
+    tenantEnvName: "AAD_CN_TENANT_ID",
+    audienceEnvName: "AAD_CN_AUDIENCE",
     getSigningKeys: getSigningKeysForAzureCN,
     toPrincipalId: transpileToComEmail, // 保持原行为：transpile
   },
+};
+
+/**
+ * 按 flavor 构造 jsonwebtoken 的 validationOptions（tenant + audience + 算法）。
+ *
+ * 改动前这里是 `issuer: decoded.iss, audience: decoded.aud`——拿 token 自己声明的值
+ * 校验自己，恒真，实际从未拒绝过任何 token。改为比对配置值后才真正锁定 tenant
+ * （AAD v1.0 的 iss 形如 `${base}/${tid}/`，故精确校验 issuer 即校验 tenant）与目标资源。
+ *
+ * tenant/audience 未配置时**跳过该项并打 warn**（fail-open）：不传该 key 时
+ * jsonwebtoken 整项跳过校验，与改动前的净效果等价，因此发布不会造成行为回归。
+ * 代价是配置未就位前洞仍开着——warn 日志即该待办的追踪信号。
+ *
+ * issuer 同时接受带/不带尾斜杠两种形式：AAD v1.0 实际签发的是带尾斜杠的
+ * `${base}/${tid}/`，两种形式锁定的都是同一个 tenant。接受两者可消除「配置时漏写
+ * 尾斜杠 → 全量 401」这个最可能的自伤事故，代价仅是多接受一个 AAD 从不签发的等价形式。
+ *
+ * @param {string} type - AUTHORIZER_TYPE.MSAL 或 AUTHORIZER_TYPE.MSAL_CN
+ * @returns {object} - 传给 jsonWebToken.verify 的 options
+ */
+const buildAzureValidationOptions = (type) => {
+  const config = AZURE_AUTHORIZERS[type];
+  const options = { algorithms: ["RS256"] };
+
+  const tenantId = config.getTenantId();
+  if (tenantId) {
+    options.issuer = [
+      `${config.issuerBase}/${tenantId}/`,
+      `${config.issuerBase}/${tenantId}`,
+    ];
+  } else {
+    console.warn(
+      `${config.label}: ${config.tenantEnvName} not configured, skipping tenant validation`
+    );
+  }
+
+  // 逗号分隔多值 → 数组。AAD 的 aud 常见 GUID 与 api://{guid} 两种等价形态，
+  // jsonwebtoken 对数组走 some() 任一匹配，无需自定义比对。
+  const audience = config.getAudience();
+  if (audience) {
+    options.audience = audience
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  } else {
+    console.warn(
+      `${config.label}: ${config.audienceEnvName} not configured, skipping audience validation`
+    );
+  }
+
+  return options;
 };
 
 const verifyAzureToken = (
@@ -142,6 +210,7 @@ const verifyAzureToken = (
 ) => {
   const config = AZURE_AUTHORIZERS[type];
 
+  // appid 是「请求 token 的客户端」，aud 是「token 的目标资源」，两个不同声明，都校验。
   if (!decoded || config.getAppId() !== decoded.appid) {
     console.error(
       `Decoded ${config.label} token is invalid: ` + JSON.stringify(decoded)
@@ -149,10 +218,7 @@ const verifyAzureToken = (
     return context.fail("Unauthorized");
   }
 
-  const validationOptions = {
-    audience: decoded.aud,
-    issuer: decoded.iss,
-  };
+  const validationOptions = buildAzureValidationOptions(type);
 
   jsonWebToken.verify(
     accessToken,
@@ -187,7 +253,7 @@ const getSigningKeysForCowork = (header, callback) => {
  * 校验 daedalus 签发的 cowork run token（RS256，outbound aud = hongshan-lite-api）。
  *
  * 与 Okta/MSAL 分支的关键差异：
- * - 强制 `algorithms: ['RS256']`（既有 Azure 分支未传，属既存弱点，本分支不沿袭）。
+ * - 强制 `algorithms: ['RS256']`。
  * - `issuer` 用 process.env.COWORK_ISSUER 精确比对——绝不能用 decoded.iss
  *   （token 自证），否则 dev 签的 token 能在 prod 通过。
  * - policy 不用 allowAllMethods，改按 `scp` 声明经 cowork-scope-policy 逐条放行。
@@ -258,6 +324,7 @@ const verifyOktaToken = (accessToken, event, context, allowAccess) => {
 
 module.exports.transpileToComEmail = transpileToComEmail;
 module.exports.resolveAuthorizerTypeByIssuer = resolveAuthorizerTypeByIssuer;
+module.exports.buildAzureValidationOptions = buildAzureValidationOptions;
 module.exports.verifyAccessToken = function verifyAccessToken(
   accessToken,
   event,

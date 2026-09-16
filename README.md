@@ -58,9 +58,19 @@ CLIENT_ID -> a client_id from your Okta tenant
 
 AAD_APPLICATION_ID -> the Azure AD (global) application id used to verify MSAL tokens
 
+AAD_TENANT_ID -> the Azure AD (global) tenant id; pins the accepted token issuer
+
+AAD_AUDIENCE -> expected `aud` for MSAL tokens; comma-separated for multiple values
+
 AAD_CN_APPLICATION_ID -> the Azure AD (China) application id used to verify MSAL-CN tokens
 
+AAD_CN_TENANT_ID -> the Azure AD (China) tenant id; pins the accepted token issuer
+
+AAD_CN_AUDIENCE -> expected `aud` for MSAL-CN tokens; comma-separated for multiple values
+
 The `audience` value should uniquely identify your AWS API Gateway deployment. You should assign unique audiences for each API Gateway authorizer instance so that a token intended for one gateway is not valid for another.
+
+**Note on the `AAD_*_TENANT_ID` / `AAD_*_AUDIENCE` variables:** when either is unset, that individual check is skipped and a warning is logged (`... not configured, skipping ... validation`). This fail-open default exists so that deploying this code without the variables configured is not a breaking change. **It also means the tenant/audience restriction is not in effect until you set them** — set all four based on your real tokens, then confirm the `skipping ... validation` warnings stop appearing in CloudWatch. Note that `AAD_AUDIENCE` is unrelated to `AUDIENCE`: the latter is the Okta audience, the former is the expected `aud` of Azure AD tokens.
 
 Click **Save** to create your function.
 
@@ -75,6 +85,8 @@ The authorizer selects its verification strategy from the JWT's `iss` (issuer) c
 | `https://hongshan.okta.com` | Okta |
 
 If the `iss` claim does not match any of the above prefixes, the request is rejected with `Unauthorized`. The legacy `New-Authorizer` header (values `MSAL` / `MSAL-CN`) is still honored as a transitional fallback only when the `iss` cannot be recognized; it is deprecated and will be removed in a future release.
+
+For the two Azure branches, the token is additionally checked against `AAD_TENANT_ID` / `AAD_AUDIENCE` (or the `AAD_CN_*` equivalents) and is accepted only if signed with `RS256`. Because an Azure AD v1.0 `iss` embeds the tenant id (`https://sts.windows.net/{tenant-id}/`), pinning the issuer is what pins the tenant. The Okta branch uses `@okta/jwt-verifier` with `ISSUER` / `AUDIENCE` instead.
 
 ### Creating an IAM Role for the Lambda function
 
