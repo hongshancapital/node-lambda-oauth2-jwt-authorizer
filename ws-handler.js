@@ -9,7 +9,7 @@ exports.wshandler = async function(event) {
       const headers = event.headers || {};
       const authorization = headers.Authorization || headers.authorization;
       if (!authorization) {
-         throw new Error("Unauthorized");
+         throw VerifyToken.unauthorized();
       }
       const arr = authorization.split(" ");
       var accessToken = arr[1];

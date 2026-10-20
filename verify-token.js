@@ -265,6 +265,9 @@ const verifyOktaToken = (accessToken, event, allowAccess) => {
 
 module.exports.transpileToComEmail = transpileToComEmail;
 module.exports.resolveAuthorizerTypeByIssuer = resolveAuthorizerTypeByIssuer;
+// 拒绝工厂统一由此导出：调用方一律复用它，避免 "Unauthorized" 字面量散落各处
+// 被改写后令 API Gateway 无法映射成 401。
+module.exports.unauthorized = unauthorized;
 module.exports.verifyAccessToken = function verifyAccessToken(
   accessToken,
   event,

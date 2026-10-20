@@ -84,7 +84,7 @@ exports.handler = async function (event) {
     allowAccessFunction = wsAllowAccess;
   } else {
     console.error("Invalid auth params");
-    throw new Error("Unauthorized");
+    throw VerifyToken.unauthorized();
   }
 
   return VerifyToken.verifyAccessToken(accessToken, event, allowAccessFunction);
