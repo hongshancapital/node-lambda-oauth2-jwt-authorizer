@@ -1,8 +1,9 @@
 /**
  * cowork-agent 验签正反用例验证脚本。
  *
- * 覆盖：合法 token（sub→principalId、scp→逐条 allowMethod）、错 issuer（跨环境
- * 拒绝）、alg=none、HS256 用公钥当 HMAC 密钥（算法混淆攻击）、未知 kid、错 audience。
+ * 覆盖：合法 token（sub→principalId、scp→逐条 allowMethod）、错 issuer（命中路由前缀
+ * 但非精确 COWORK_ISSUER，跨环境拒绝）、未识别 issuer（路由层兜底拒绝）、alg=none、
+ * HS256 用公钥当 HMAC 密钥（算法混淆攻击）、未知 kid、错 audience。
  *
  * 用法：node test/cowork-agent-auth.test.cjs
  * 自包含：运行时生成测试密钥对，不依赖真实私钥；COWORK_ISSUER / AUDIENCE 从
@@ -27,14 +28,72 @@ const makeEvent = (token) => ({
   methodArn: 'arn:aws:execute-api:us-west-2:1234567890:apiId/stage/GET/api/mcp',
 });
 
+// 拒绝语义的契约值：'Unauthorized' 是 API Gateway 把 authorizer 拒绝映射成 HTTP 401
+// 的外部契约，必须由测试侧独立硬编码——若从 VerifyToken.unauthorized() 反推，实现改写
+// 文案时期望值与断言行为会一起漂移，负向用例仍全绿，契约破坏无法被 CI 发现。
+const DENY_MSG = 'Unauthorized';
+// 合法用例的期望结构：sub→principalId 归一结果，以及 scp ['cowork:mcp','cowork:read']
+// 逐条展开后的 Allow resource（API Gateway methodArn 的 resource 段不含 /v1）。
+const EXPECTED_PRINCIPAL = 'bbao@hongshan.com';
+const EXPECTED_ALLOW_RESOURCES = [
+  'arn:aws:execute-api:us-west-2:1234567890:apiId/stage/POST/api/mcp',
+  'arn:aws:execute-api:us-west-2:1234567890:apiId/stage/POST/api/mcp/*',
+  'arn:aws:execute-api:us-west-2:1234567890:apiId/stage/GET/api/*',
+].sort();
+let failed = false;
+
 function run(token, label) {
-  return new Promise((resolve) => {
-    const context = {
-      fail: (msg) => resolve({ label, ok: false, msg }),
-      succeed: (auth) => resolve({ label, ok: true, auth }),
-    };
-    VerifyToken.verifyAccessToken(token, makeEvent(token), context, (e) => e);
-  });
+  // 第三个参数 allowAccess 省略（显式 undefined）：COWORK_AGENT 分支不使用它，
+  // 不要传占位函数——将来新增 Okta/MSAL 用例时它会被当成 policy 对象调用而崩溃。
+  return VerifyToken.verifyAccessToken(token, makeEvent(token), undefined)
+    .then((auth) => ({ label, ok: true, auth }))
+    .catch((err) => {
+      // 只有明确的鉴权拒绝才算 ok:false；内部异常（policy.build 未定义语句、
+      // jwt must be a string 等）必须单独暴露并使进程失败，否则假绿。
+      if (err && err.message === DENY_MSG) {
+        return { label, ok: false, msg: err.message };
+      }
+      return { label, ok: 'error', msg: (err && err.stack) || String(err) };
+    });
+}
+
+// expectAllow=true → 必须放行；否则必须是「因 Unauthorized 被拒」。
+function report(r, expectAllow) {
+  if (r.ok === 'error') {
+    failed = true;
+    console.log(`${r.label} → ERROR (内部异常，验签路径已崩): ${r.msg}`);
+    return;
+  }
+  if (expectAllow) {
+    if (!r.ok) {
+      failed = true;
+      console.log(`${r.label} → FAIL (应放行却拒绝: ${r.msg})`);
+      return;
+    }
+    // 正向用例也做结构断言：仅 resolve 不足以守住 sub→principalId 与
+    // scp→逐条 allowMethod 的映射（任一回归都应让 CI 非零退出）。
+    const problems = [];
+    if (r.auth.principalId !== EXPECTED_PRINCIPAL) {
+      problems.push(`principalId=${JSON.stringify(r.auth.principalId)}（期望 ${EXPECTED_PRINCIPAL}）`);
+    }
+    const statements = (r.auth.policyDocument && r.auth.policyDocument.Statement) || [];
+    const allow = statements.find((s) => s.Effect === 'Allow');
+    const actualResources = allow ? allow.Resource.slice().sort() : [];
+    if (JSON.stringify(actualResources) !== JSON.stringify(EXPECTED_ALLOW_RESOURCES)) {
+      problems.push(`Allow resource=${JSON.stringify(actualResources)}（期望 ${JSON.stringify(EXPECTED_ALLOW_RESOURCES)}）`);
+    }
+    if (problems.length > 0) failed = true;
+    console.log(
+      `${r.label} →`,
+      problems.length === 0
+        ? `ALLOW principal=${r.auth.principalId} (scp 映射结构已校验)`
+        : `FAIL (${problems.join('; ')})`,
+    );
+    return;
+  }
+  const pass = r.ok === false && r.msg === DENY_MSG;
+  if (!pass) failed = true;
+  console.log(`${r.label} →`, pass ? 'DENY ✓' : `FAIL (ok=${r.ok}, msg=${r.msg})`);
 }
 
 const sign = (opts = {}) =>
@@ -53,37 +112,62 @@ const sign = (opts = {}) =>
   );
 
 (async () => {
-  // 1. 合法 token
-  let r = await run(sign(), 'valid');
-  console.log('valid →', r.ok ? 'ALLOW principal=' + r.auth.principalId : 'DENY ' + r.msg);
+  // 0. 契约守卫：实现侧的拒绝工厂必须仍产出 API Gateway 401 契约要求的字面量。
+  // 期望值来自测试侧硬编码，任何文案改动都会在这里失败，负向用例不会跟着漂移。
+  const factoryMsg = VerifyToken.unauthorized().message;
+  if (factoryMsg !== DENY_MSG) {
+    failed = true;
+    console.log(
+      `deny-contract → FAIL (unauthorized().message=${JSON.stringify(factoryMsg)}，期望 ${JSON.stringify(DENY_MSG)})`,
+    );
+  } else {
+    console.log('deny-contract → OK');
+  }
 
-  // 2. 错 issuer（dev 签的不能在 prod 过）
-  r = await run(sign({ issuer: 'https://cowork-dev.hongshan.com' }), 'wrong-issuer');
-  console.log('wrong-issuer →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  // 1. 合法 token
+  report(await run(sign(), 'valid'), true);
+
+  // 2. 错 issuer（dev 签的不能在 prod 过）：必须命中 COWORK_AGENT 路由前缀、
+  // 真正进入 verifyCoworkAgentToken 的 issuer 精确比对——若用完全无法识别的 iss，
+  // 请求会在路由层就被拒，即使删掉精确比对用例也照样通过（假绿）。
+  report(
+    await run(sign({ issuer: 'https://cowork.hongshan.com.evil.com' }), 'wrong-issuer'),
+    false,
+  );
+
+  // 2b. 完全未识别的 issuer：覆盖路由层兜底拒绝
+  report(
+    await run(sign({ issuer: 'https://cowork-dev.hongshan.com' }), 'unrecognized-issuer'),
+    false,
+  );
 
   // 3. alg=none
   const noneToken = jwt.sign({ scp: [] }, Buffer.alloc(0), { algorithm: 'none' });
-  r = await run(noneToken, 'alg-none');
-  console.log('alg-none →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  report(await run(noneToken, 'alg-none'), false);
 
-  // 4. HS256 用公钥当 HMAC 密钥（经典算法混淆攻击）
+  // 4. HS256 用公钥当 HMAC 密钥（经典算法混淆攻击）。keyid 必须命中已配置的
+  // test-kid，否则会先因未知 kid 被拒，掩盖 algorithms:['RS256'] 这道真正防线。
+  let hsToken = null;
   try {
-    const hsToken = jwt.sign({ scp: [] }, pubPem, {
+    hsToken = jwt.sign({ scp: [] }, pubPem, {
       algorithm: 'HS256',
+      keyid: 'test-kid',
       issuer: 'https://cowork.hongshan.com',
       audience: process.env.AUDIENCE,
     });
-    r = await run(hsToken, 'alg-confusion');
-    console.log('alg-confusion →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
   } catch (e) {
-    console.log('alg-confusion → sign error (skipped):', e.message);
+    // 安全用例无法构造 = 未执行，视为失败，不能静默跳过。
+    failed = true;
+    console.log('alg-confusion → ERROR (攻击 token 构造失败，用例未执行):', e.message);
   }
+  if (hsToken) report(await run(hsToken, 'alg-confusion'), false);
 
   // 5. 未知 kid
-  r = await run(sign({ keyid: 'unknown-kid' }), 'unknown-kid');
-  console.log('unknown-kid →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  report(await run(sign({ keyid: 'unknown-kid' }), 'unknown-kid'), false);
 
   // 6. 错 audience
-  r = await run(sign({ audience: 'other-api' }), 'wrong-audience');
-  console.log('wrong-audience →', r.ok ? 'ALLOW (BUG!)' : 'DENY ✓');
+  report(await run(sign({ audience: 'other-api' }), 'wrong-audience'), false);
+
+  // 任一用例不符合预期（含内部异常）都让脚本以非零码退出
+  if (failed) process.exitCode = 1;
 })();
