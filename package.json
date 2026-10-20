@@ -4,7 +4,7 @@
   "description": "RFC 6750 OAuth2 bearer JSON Web Token (JWT) custom authorizer for AWS API Gateway",
   "main": "index.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "test": "node --test test/*.test.cjs",
