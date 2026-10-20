@@ -28,13 +28,9 @@ const makeEvent = (token) => ({
 });
 
 function run(token, label) {
-  return new Promise((resolve) => {
-    const context = {
-      fail: (msg) => resolve({ label, ok: false, msg }),
-      succeed: (auth) => resolve({ label, ok: true, auth }),
-    };
-    VerifyToken.verifyAccessToken(token, makeEvent(token), context, (e) => e);
-  });
+  return VerifyToken.verifyAccessToken(token, makeEvent(token), (e) => e)
+    .then((auth) => ({ label, ok: true, auth }))
+    .catch((err) => ({ label, ok: false, msg: err.message }));
 }
 
 const sign = (opts = {}) =>

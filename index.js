@@ -66,7 +66,7 @@ const wsAllowAccess = function(event, email) {
   return generatePolicy(event, 'Allow', VerifyToken.transpileToComEmail(email));
 }
 
-exports.handler = function (event, context) {
+exports.handler = async function (event) {
   if (event.requestContext) {
     console.log("x-apigw-request-id: " + event.requestContext.requestId);
   }
@@ -79,12 +79,13 @@ exports.handler = function (event, context) {
     let bearerToken = event.headers.Authorization || event.headers.authorization;
     accessToken = bearerToken.split(" ")[1];
     allowAccessFunction = httpAllowAccess;
-  } else if (event.queryStringParameters.AuthToken) {
+  } else if (event.queryStringParameters && event.queryStringParameters.AuthToken) {
     accessToken = event.queryStringParameters.AuthToken;
     allowAccessFunction = wsAllowAccess;
   } else {
     console.error("Invalid auth params");
+    throw new Error("Unauthorized");
   }
 
-  return VerifyToken.verifyAccessToken(accessToken, event, context, allowAccessFunction);
+  return VerifyToken.verifyAccessToken(accessToken, event, allowAccessFunction);
 };
