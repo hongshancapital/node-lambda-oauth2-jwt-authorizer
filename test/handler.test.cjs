@@ -2,11 +2,13 @@
 
 /**
  * index.js handler 的 token 提取分支与策略生成端到端测试（离线）。
+ * 对齐 #32 async 迁移后的 API：exports.handler 为 async，返回 Promise，
+ * 鉴权拒绝统一抛 VerifyToken.unauthorized()。
  *
  * 覆盖：authorizationToken / headers.Authorization / headers.authorization（小写）
  * 三条 HTTP 入口 → httpAllowAccess（AuthPolicy allowAllMethods）；
  * queryStringParameters.AuthToken → wsAllowAccess（单语句 policy）；
- * 全部缺失 → 显式 Unauthorized。
+ * 全部缺失 → 显式 Unauthorized（#32 已修复：不再对缺失字段 TypeError 崩溃）。
  */
 
 const { test } = require('node:test');
@@ -32,13 +34,12 @@ const MSAL_TOKEN = signAzure({
 });
 
 const invoke = (event) =>
-  new Promise((resolve) => {
-    const context = {
-      fail: (msg) => resolve({ ok: false, msg }),
-      succeed: (auth) => resolve({ ok: true, auth }),
-    };
-    handler(event, context);
-  });
+  handler(event)
+    .then((auth) => ({ ok: true, auth }))
+    .catch((err) => {
+      if (err && err.message === 'Unauthorized') return { ok: false, msg: err.message };
+      throw err; // 内部异常不得伪装成 deny
+    });
 
 test('authorizationToken（Bearer）→ httpAllowAccess → allowAllMethods 策略', async () => {
   const r = await invoke(
@@ -93,12 +94,8 @@ test('queryStringParameters.AuthToken → wsAllowAccess → 单语句 methodArn 
   assert.equal(r.auth.principalId, 'user@hongshan.com');
 });
 
-test('所有取 token 分支均缺失 → 显式 Unauthorized（fail-closed）', async () => {
-  // API Gateway authorizer 事件恒带 queryStringParameters 字段（可为空对象），
-  // 故按真实事件形状构造。已知缺陷（未改源码，后续单独 PR）：index.js:82 直接
-  // 读 event.queryStringParameters.AuthToken，字段完全缺失时会 TypeError 崩溃
-  // 而非显式 Unauthorized——线上 API GW 不会发这种形状，暂无影响。
-  const r = await invoke(makeEvent({ queryStringParameters: {} }));
+test('所有取 token 分支均缺失 → 显式 Unauthorized（fail-closed，#32 已修复崩溃路径）', async () => {
+  const r = await invoke(makeEvent());
   assert.ok(!r.ok, 'should deny');
   assert.equal(r.msg, 'Unauthorized');
 });

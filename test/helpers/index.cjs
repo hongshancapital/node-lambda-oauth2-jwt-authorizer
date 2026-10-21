@@ -88,15 +88,21 @@ function makeEvent(overrides = {}) {
   };
 }
 
-/** 以 Lambda 风格 context 包装 verify 调用，返回 { ok, auth?/msg? } */
+/**
+ * 以 Promise 风格包装 verify 调用（#32 async 迁移后的新 API）。
+ * resolve → { ok:true, auth }；message==='Unauthorized' 的拒绝 → { ok:false, msg }
+ * （这是 API Gateway 映射 401 的外部契约字面量，测试侧硬编码）；
+ * 其余内部异常原样抛出——不能伪装成 deny 造成假绿。
+ */
 function run(verifyFn, token, event, allowAccess) {
-  return new Promise((resolve) => {
-    const context = {
-      fail: (msg) => resolve({ ok: false, msg }),
-      succeed: (auth) => resolve({ ok: true, auth }),
-    };
-    verifyFn(token, event, context, allowAccess);
-  });
+  return verifyFn(token, event, allowAccess)
+    .then((auth) => ({ ok: true, auth }))
+    .catch((err) => {
+      if (err && err.message === 'Unauthorized') {
+        return { ok: false, msg: err.message };
+      }
+      throw err;
+    });
 }
 
 /** Azure(MSAL) 访问令牌 */

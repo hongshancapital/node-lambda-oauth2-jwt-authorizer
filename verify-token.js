@@ -11,6 +11,10 @@ const { buildCoworkPolicy } = require("./cowork-scope-policy");
 const tokenHash = (token) =>
   crypto.createHash("sha256").update(token).digest("hex").substring(0, 32);
 
+// Node.js 24 运行时已移除 context.succeed / context.fail，改为返回来放行、
+// 抛出 "Unauthorized" 来拒绝——API Gateway 依赖该消息返回 401。
+const unauthorized = () => new Error("Unauthorized");
+
 /******************************************************/
 
 const oktaJwtVerifier = new OktaJwtVerifier({
@@ -137,7 +141,6 @@ const verifyAzureToken = (
   accessToken,
   decoded,
   event,
-  context,
   allowAccess
 ) => {
   const config = AZURE_AUTHORIZERS[type];
@@ -146,7 +149,7 @@ const verifyAzureToken = (
     console.error(
       `Decoded ${config.label} token is invalid: ` + JSON.stringify(decoded)
     );
-    return context.fail("Unauthorized");
+    return Promise.reject(unauthorized());
   }
 
   const validationOptions = {
@@ -154,26 +157,28 @@ const verifyAzureToken = (
     issuer: decoded.iss,
   };
 
-  jsonWebToken.verify(
-    accessToken,
-    config.getSigningKeys,
-    validationOptions,
-    (err, payload) => {
-      if (err) {
-        console.log(err);
-        console.log(JSON.stringify(payload));
-        return context.fail("Unauthorized");
-      } else {
+  return new Promise((resolve, reject) => {
+    jsonWebToken.verify(
+      accessToken,
+      config.getSigningKeys,
+      validationOptions,
+      (err, payload) => {
+        if (err) {
+          console.log(err);
+          console.log(JSON.stringify(payload));
+          return reject(unauthorized());
+        }
         const policy = allowAccess(event, decoded.upn);
         console.log(`Auth succeed as ${decoded.upn}`);
-        const newContext = policy.build({
-          principalId: config.toPrincipalId(decoded.upn),
-          tokenHash: tokenHash(accessToken),
-        });
-        return context.succeed(newContext);
+        return resolve(
+          policy.build({
+            principalId: config.toPrincipalId(decoded.upn),
+            tokenHash: tokenHash(accessToken),
+          })
+        );
       }
-    }
-  );
+    );
+  });
 };
 
 const getSigningKeysForCowork = (header, callback) => {
@@ -193,47 +198,50 @@ const getSigningKeysForCowork = (header, callback) => {
  * - policy 不用 allowAllMethods，改按 `scp` 声明经 cowork-scope-policy 逐条放行。
  * - principalId = transpileToComEmail(sub)，与 daedalus 的 sub 归一对齐。
  */
-const verifyCoworkAgentToken = (accessToken, event, context) => {
+const verifyCoworkAgentToken = (accessToken, event) => {
   const issuer = process.env.COWORK_ISSUER;
   if (!issuer) {
     console.error("COWORK_ISSUER not configured");
-    return context.fail("Unauthorized");
+    return Promise.reject(unauthorized());
   }
 
-  jsonWebToken.verify(
-    accessToken,
-    getSigningKeysForCowork,
-    {
-      algorithms: ["RS256"],
-      issuer,
-      audience: process.env.AUDIENCE,
-    },
-    (err, payload) => {
-      if (err) {
-        console.log(err);
-        return context.fail("Unauthorized");
+  return new Promise((resolve, reject) => {
+    jsonWebToken.verify(
+      accessToken,
+      getSigningKeysForCowork,
+      {
+        algorithms: ["RS256"],
+        issuer,
+        audience: process.env.AUDIENCE,
+      },
+      (err, payload) => {
+        if (err) {
+          console.log(err);
+          return reject(unauthorized());
+        }
+        // sub 是身份主依据，缺失/非字符串时 fail-closed——否则 transpileToComEmail
+        // 会对 undefined 抛 TypeError，令 Lambda 报 500 而非显式 Unauthorized。
+        if (typeof payload.sub !== "string" || payload.sub.trim() === "") {
+          console.error("cowork-agent token missing/invalid sub claim");
+          return reject(unauthorized());
+        }
+        const principalId = transpileToComEmail(payload.sub);
+        const policy = buildCoworkPolicy(event, principalId, payload.scp);
+        console.log(`Auth succeed as cowork-agent ${principalId}`);
+        return resolve(
+          policy.build({
+            principalId,
+            tokenHash: tokenHash(accessToken),
+            coworkRunId: payload.jti,
+          })
+        );
       }
-      // sub 是身份主依据，缺失/非字符串时 fail-closed——否则 transpileToComEmail
-      // 会对 undefined 抛 TypeError，令 Lambda 报 500 而非显式 Unauthorized。
-      if (typeof payload.sub !== "string" || payload.sub.trim() === "") {
-        console.error("cowork-agent token missing/invalid sub claim");
-        return context.fail("Unauthorized");
-      }
-      const principalId = transpileToComEmail(payload.sub);
-      const policy = buildCoworkPolicy(event, principalId, payload.scp);
-      console.log(`Auth succeed as cowork-agent ${principalId}`);
-      const newContext = policy.build({
-        principalId,
-        tokenHash: tokenHash(accessToken),
-        coworkRunId: payload.jti,
-      });
-      return context.succeed(newContext);
-    }
-  );
+    );
+  });
 };
 
-const verifyOktaToken = (accessToken, event, context, allowAccess) => {
-  oktaJwtVerifier
+const verifyOktaToken = (accessToken, event, allowAccess) => {
+  return oktaJwtVerifier
     .verifyAccessToken(accessToken, process.env.AUDIENCE)
     .then((jwt) => {
       // the token is valid (per definition of 'valid' above)
@@ -241,27 +249,28 @@ const verifyOktaToken = (accessToken, event, context, allowAccess) => {
 
       const policy = allowAccess(event, jwt.claims.sub);
       console.log(`Auth succeed as ${jwt.claims.sub}`);
-      const newContext = policy.build({
+      return policy.build({
         principalId: jwt.claims.sub,
         tokenHash: tokenHash(accessToken),
       });
-      return context.succeed(newContext);
     })
     .catch((err) => {
       console.log(err);
       const decoded = jsonWebToken.decode(accessToken);
 
       console.error("Decoded Okta token is " + JSON.stringify(decoded));
-      return context.fail("Unauthorized");
+      throw unauthorized();
     });
 };
 
 module.exports.transpileToComEmail = transpileToComEmail;
 module.exports.resolveAuthorizerTypeByIssuer = resolveAuthorizerTypeByIssuer;
+// 拒绝工厂统一由此导出：调用方一律复用它，避免 "Unauthorized" 字面量散落各处
+// 被改写后令 API Gateway 无法映射成 401。
+module.exports.unauthorized = unauthorized;
 module.exports.verifyAccessToken = function verifyAccessToken(
   accessToken,
   event,
-  context,
   allowAccess
 ) {
   let decoded = null;
@@ -292,22 +301,21 @@ module.exports.verifyAccessToken = function verifyAccessToken(
           (decoded && decoded.iss) || "<none>"
         }`
       );
-      return context.fail("Unauthorized");
+      return Promise.reject(unauthorized());
     }
   }
 
   if (authorizerType === AUTHORIZER_TYPE.OKTA) {
-    return verifyOktaToken(accessToken, event, context, allowAccess);
+    return verifyOktaToken(accessToken, event, allowAccess);
   }
   if (authorizerType === AUTHORIZER_TYPE.COWORK_AGENT) {
-    return verifyCoworkAgentToken(accessToken, event, context);
+    return verifyCoworkAgentToken(accessToken, event);
   }
   return verifyAzureToken(
     authorizerType,
     accessToken,
     decoded,
     event,
-    context,
     allowAccess
   );
 };

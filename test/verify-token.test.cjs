@@ -2,11 +2,13 @@
 
 /**
  * verify-token.js 全路径单元测试（离线，JWKS/Okta 全部桩化）。
+ * 对齐 #32 async 迁移后的 API：verifyAccessToken 返回 Promise，
+ * 拒绝统一为 VerifyToken.unauthorized()（message='Unauthorized'）。
  *
  * 覆盖：iss 自动路由（4 类 + 未知兜底 + legacy header 回退）、MSAL / MSAL-CN /
  * OKTA 三条验签路径的成败分支、appid 校验、transpileToComEmail、tokenHash。
  *
- * 已知既存弱点（此处固化现状、不修改源码，见 verify-token.js:190 注释）：
+ * 已知既存弱点（此处固化现状、不修改源码，见 verify-token.js Azure 分支注释）：
  * Azure 分支的 issuer/audience 校验用 decoded 自证声明，非 env 白名单。
  */
 
@@ -92,6 +94,10 @@ test('transpileToComEmail：hongshan.cn 归一，其余原样', () => {
   );
 });
 
+test('unauthorized() 工厂产出 401 契约字面量（拒绝文案的契约守卫）', () => {
+  assert.equal(VerifyToken.unauthorized().message, 'Unauthorized');
+});
+
 // ---------- MSAL（Azure 全球）----------
 
 test('MSAL 合法 token → ALLOW：principalId=upn 不 transpile，tokenHash 32 位', async () => {
@@ -104,7 +110,7 @@ test('MSAL 合法 token → ALLOW：principalId=upn 不 transpile，tokenHash 32
   assert.match(r.auth.context.tokenHash, /^[a-f0-9]{32}$/);
 });
 
-test('MSAL appid 不匹配 → DENY', async () => {
+test('MSAL appid 不匹配 → DENY（Unauthorized）', async () => {
   const token = signAzure({
     keyPair,
     ...MSAL,
@@ -113,6 +119,7 @@ test('MSAL appid 不匹配 → DENY', async () => {
   });
   const r = await verify(token, makeEvent({ authorizationToken: `Bearer ${token}` }));
   assert.ok(!r.ok, 'should deny');
+  assert.equal(r.msg, 'Unauthorized');
 });
 
 // ---------- MSAL-CN（Azure 中国）----------
@@ -143,7 +150,7 @@ test('OKTA 合法 token → ALLOW：principalId 取 claims.sub', async () => {
   assert.equal(r.auth.context.principalId, 'okta-user@hongshan.com');
 });
 
-test('OKTA 验签失败 → DENY', async () => {
+test('OKTA 验签失败 → DENY（Unauthorized）', async () => {
   oktaState.verifyAccessToken = async () => {
     throw new Error('invalid okta token');
   };
